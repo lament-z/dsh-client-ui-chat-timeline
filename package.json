@@ -35,7 +35,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsdown",
     "watch": "tsdown --watch",
-    "prepare": "pnpm build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

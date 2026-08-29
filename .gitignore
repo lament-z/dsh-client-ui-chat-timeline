@@ -1,8 +1,9 @@
 # Dependencies
 node_modules/
 
-# Build output (run `pnpm build` to regenerate)
-lib/
+# NOTE: lib/ (build output) IS committed on purpose — installs from this git
+# repo must work without running lifecycle scripts (pnpm 11 blocks them by
+# default). Rebuild with `pnpm build` and include lib/ in release commits.
 
 # Logs
 *.log
