@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Build output (run `pnpm build` to regenerate)
+lib/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
