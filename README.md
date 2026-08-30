@@ -11,6 +11,10 @@ The interaction design replicates the ZCode desktop client's TurnNavigator (reve
 ## Install
 
 ```sh
+# Preferred: from npm
+dsh plugin --profile web add @lament_z/dsh-client-ui-chat-timeline
+
+# Or from a local working copy
 dsh plugin --profile web add link:<this directory>
 ```
 
