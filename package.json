@@ -1,8 +1,8 @@
 {
   "name": "@lament-z/dsh-client-ui-chat-timeline",
-  "description": "DSH web GUI chat timeline plugin — a left-edge question navigator rail replicated from the ZCode TurnNavigator: one tick per user question, hover ripple, turn preview cards, click to jump, scroll-synced highlight.",
+  "displayName": "DSH Chat Timeline",
+  "description": "DSH Web 对话时间线插件：在左侧提供仿 ZCode TurnNavigator 的提问导航条，每个用户问题一个刻度，支持悬停波纹反馈、轮次预览卡片、点击跳转定位与滚动同步高亮，快速回溯长对话。",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -63,5 +63,17 @@
     "README.zh.md",
     "README.i18n.yaml"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lament-z/dsh-client-ui-chat-timeline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lament-z/dsh-client-ui-chat-timeline/issues"
+  },
+  "homepage": "https://github.com/lament-z/dsh-client-ui-chat-timeline",
   "license": "MIT"
 }
