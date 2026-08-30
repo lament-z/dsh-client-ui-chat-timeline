@@ -4,4 +4,4 @@
 # `dsh plugin --profile web add link:<repo>/plugin`.
 - insert:
     - id: ui-chat-timeline
-      name: '@lament-z/dsh-client-ui-chat-timeline'
+      name: '@lament_z/dsh-client-ui-chat-timeline'

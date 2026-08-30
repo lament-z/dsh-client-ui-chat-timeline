@@ -1,5 +1,5 @@
 {
-  "name": "@lament-z/dsh-client-ui-chat-timeline",
+  "name": "@lament_z/dsh-client-ui-chat-timeline",
   "displayName": "DSH Chat Timeline",
   "description": "DSH Web 对话时间线插件：在左侧提供仿 ZCode TurnNavigator 的提问导航条，每个用户问题一个刻度，支持悬停波纹反馈、轮次预览卡片、点击跳转定位与滚动同步高亮，快速回溯长对话。",
   "version": "0.1.0",

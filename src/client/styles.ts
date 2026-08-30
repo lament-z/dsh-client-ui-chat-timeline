@@ -119,7 +119,7 @@ export function ensureStyles(doc: Document): void {
   const tagId = 'chat-timeline'
   if (doc.querySelector('style[data-plugin-css="chat-timeline"]') !== null) return
   const tag = doc.createElement('style')
-  tag.dataset.plugin = '@lament-z/dsh-client-ui-chat-timeline'
+  tag.dataset.plugin = '@lament_z/dsh-client-ui-chat-timeline'
   tag.dataset.pluginCss = tagId
   tag.textContent = TIMELINE_STYLES
   doc.head.appendChild(tag)

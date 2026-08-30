@@ -11,7 +11,7 @@
  */
 import { defineConfig } from 'tsdown'
 
-const PKG_NAME = '@lament-z/dsh-client-ui-chat-timeline'
+const PKG_NAME = '@lament_z/dsh-client-ui-chat-timeline'
 
 /** The shell's frozen module table (mirrors dsh-web shared/web-platform.ts) plus the documented runtime exemption. */
 const PLATFORM_MODULES = [
