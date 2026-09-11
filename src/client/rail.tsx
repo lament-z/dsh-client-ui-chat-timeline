@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { buildTimelineItems, type TimelineItem, type TimelineLabels } from './directory.ts'
 import type { TimelineKey } from './locales.ts'
-import { probeChatDom, type ChatDomProbe } from './dom.ts'
+import { jumpToTurn, probeChatDom, type ChatDomProbe } from './dom.ts'
 import { ensureStyles } from './styles.ts'
 import type { TimelineSource } from './source.ts'
 
@@ -84,20 +84,20 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   const timers = useRef<{ open: number | undefined; close: number | undefined }>({ open: undefined, close: undefined })
   const frame = useRef(0)
 
-  const labels: TimelineLabels = useMemo(
-    () => ({
-      userFallback: t('preview.userFallback'),
-      assistantEmpty: t('preview.assistantEmpty'),
-      assistantRunning: t('preview.assistantRunning'),
-    }),
-    [t],
-  )
-
   const snapshot = state.snapshot
+  // 官方 turnOutline 数据面：source 直接产出刻度（宿主已算好全史预览）。
   const items = useMemo<TimelineItem[]>(
-    () => (snapshot === null ? [] : buildTimelineItems(snapshot.nodes as never[], snapshot.running, labels)),
-    [snapshot, labels],
+    () => (snapshot === null ? [] : (snapshot.items as TimelineItem[])),
+    [snapshot],
   )
+  const sourceRef = useRef(source)
+  sourceRef.current = source
+  const itemsRef = useRef<TimelineItem[]>([])
+  itemsRef.current = items
+  // 0.1.5 探针按行键的 seq 前缀找锚点（`data-chat-flow-key="<seq>:<kind><id>"`）。
+  const seqs = useMemo(() => items.map((item) => item.seq), [items])
+  const seqsRef = useRef<number[]>([])
+  seqsRef.current = seqs
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -139,7 +139,7 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
         frame.current = 0
         const box = container.getBoundingClientRect()
         setRect({ left: box.left, top: box.top, height: box.height, width: box.width })
-        setActiveIndex(probe.activeIndex())
+        setActiveIndex(probe.activeIndex(seqsRef.current))
       })
     }
     sync()
@@ -155,6 +155,12 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
       frame.current = 0
     }
   }, [probe, containerVersion])
+
+  // items 变化（事件窗口增长/切换会话）后重算一次 active 高亮。
+  useEffect(() => {
+    if (probe === null || containerVersion === 0 || rect === null) return
+    setActiveIndex(probe.activeIndex(seqs))
+  }, [probe, containerVersion, rect, seqs])
 
   const visible = snapshot !== null && items.length >= 2 && rect !== null && rect.width >= MIN_CONTAINER_WIDTH
   // The ripple follows the pointer only (ZCode v5e parity): at rest every tick
@@ -177,8 +183,14 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   }, [])
 
   const jump = useCallback((index: number) => {
-    probe?.jumpTo(index, reducedMotion ? 'auto' : 'smooth')
-  }, [probe, reducedMotion])
+    void jumpToTurn(
+      document,
+      index,
+      seqsRef.current,
+      reducedMotion ? 'auto' : 'smooth',
+      (seq: number) => sourceRef.current?.jumpThrough(seq) ?? Promise.resolve(),
+    )
+  }, [reducedMotion])
 
   if (!visible || probe === null || rect === null) return null
 
@@ -298,8 +310,14 @@ function TipCard({ item, index, rect, t }: {
       style={{ left, top }}
       role="tooltip"
     >
-      <p className="dsh-tl-tip-user">{item.userPreview}</p>
-      <p className="dsh-tl-tip-assistant" data-kind={item.assistantKind}>{item.assistantPreview}</p>
+      <p className="dsh-tl-tip-user">{item.userFallback ? t('preview.userFallback') : item.userPreview}</p>
+      <p className="dsh-tl-tip-assistant" data-kind={item.assistantKind}>
+        {item.assistantKind === 'running'
+          ? t('preview.assistantRunning')
+          : item.assistantKind === 'empty'
+            ? t('preview.assistantEmpty')
+            : item.assistantPreview}
+      </p>
     </div>
   )
 }

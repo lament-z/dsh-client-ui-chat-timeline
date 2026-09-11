@@ -21,6 +21,8 @@ export interface TimelineNodeLike {
   content?: readonly unknown[]
   /** Assistant content blocks (each `{ kind, text? }`-like). */
   blocks?: readonly unknown[]
+  /** Host turn number when known (0.1.5 DOM anchors key off `turn:N`). */
+  turn?: number
 }
 
 /** One tick in the timeline directory. */
@@ -31,6 +33,8 @@ export interface TimelineItem {
   readonly seq: number
   /** Anchor time (epoch ms); 0 when unknown. */
   readonly time: number
+  /** Host turn number when known (drives the DOM anchor lookup). */
+  readonly turn?: number
   /** Trimmed human input preview. */
   readonly userPreview: string
   /** True when the human node carried no extractable text. */
@@ -113,6 +117,7 @@ export function buildTimelineItems(
     key: string
     seq: number
     time: number
+    turn?: number
     userTexts: string[]
     hasUserText: boolean
     assistantTexts: string[]
@@ -125,6 +130,7 @@ export function buildTimelineItems(
         key: `n${node.seq}`,
         seq: node.seq,
         time: typeof node.time === 'number' ? node.time : 0,
+        turn: typeof node.turn === 'number' ? node.turn : undefined,
         userTexts: text === '' ? [] : [text],
         hasUserText: text !== '',
         assistantTexts: [],
@@ -148,6 +154,7 @@ export function buildTimelineItems(
       key: draft.key,
       seq: draft.seq,
       time: draft.time,
+      ...(draft.turn === undefined ? {} : { turn: draft.turn }),
       userPreview: buildPreview(draft.userTexts, labels.userFallback),
       userFallback: !draft.hasUserText,
       assistantPreview: buildPreview(assistantTexts, isLive ? labels.assistantRunning : labels.assistantEmpty),

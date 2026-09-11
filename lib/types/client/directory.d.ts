@@ -20,6 +20,8 @@ export interface TimelineNodeLike {
     content?: readonly unknown[];
     /** Assistant content blocks (each `{ kind, text? }`-like). */
     blocks?: readonly unknown[];
+    /** Host turn number when known (0.1.5 DOM anchors key off `turn:N`). */
+    turn?: number;
 }
 /** One tick in the timeline directory. */
 export interface TimelineItem {
@@ -29,6 +31,8 @@ export interface TimelineItem {
     readonly seq: number;
     /** Anchor time (epoch ms); 0 when unknown. */
     readonly time: number;
+    /** Host turn number when known (drives the DOM anchor lookup). */
+    readonly turn?: number;
     /** Trimmed human input preview. */
     readonly userPreview: string;
     /** True when the human node carried no extractable text. */

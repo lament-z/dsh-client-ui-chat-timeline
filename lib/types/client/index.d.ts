@@ -4,7 +4,7 @@
  * navigator rail beside the conversation. Export discipline: the /client
  * surface carries only what cordis loading needs plus types.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
 import { type TimelineKey } from './locales.ts';
 declare module '@deepseek-ai/dsh-client-ui-slots' {
     interface LocaleNamespaceMap {
