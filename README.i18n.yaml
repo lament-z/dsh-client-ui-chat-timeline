@@ -4,6 +4,7 @@ target: README.zh.md
 sections:
   - title
   - intro
+  - features
   - requirements
   - install
   - notes
