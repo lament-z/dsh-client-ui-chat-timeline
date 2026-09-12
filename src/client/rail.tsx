@@ -12,7 +12,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { type TimelineItem } from './directory.ts'
 import type { TimelineKey } from './locales.ts'
 import { jumpToTurn, probeChatDom, type ChatDomProbe } from './dom.ts'
-import { ensureStyles } from './styles.ts'
+import { ensureStyles, removeStyles } from './styles.ts'
 import type { TimelineSource } from './source.ts'
 
 /** Component props: the locale seat plus the injected session source. */
@@ -23,10 +23,6 @@ export type TimelineRailProps = PropsLocale<'chat-timeline'> & {
 
 /** Slot height per tick (10px pitch, ZCode parity). */
 const ITEM_PITCH = 10
-/** Container width below which the rail hides. ZCode uses 864px, but DSH's
- *  three-pane layout leaves the conversation narrower — the rail overlays the
- *  left edge without taking layout space, so only truly cramped panes hide. */
-const MIN_CONTAINER_WIDTH = 560
 /** Preview-card hover delays (ms). */
 const TIP_OPEN_DELAY = 120
 const TIP_CLOSE_DELAY = 80
@@ -97,6 +93,8 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   useEffect(() => {
     if (typeof document === 'undefined') return
     ensureStyles(document)
+    // 卸载时移除样式表：隐藏原生 Turn 导航的规则随标签消失，原生立即恢复。
+    return () => removeStyles(document)
   }, [])
 
   // Find the chat container: re-probe when the session changes and briefly
@@ -172,7 +170,9 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
     setActiveIndex(probe.activeIndex(turns))
   }, [probe, containerVersion, rect, turns])
 
-  const visible = snapshot !== null && items.length >= 2 && rect !== null && rect.width >= MIN_CONTAINER_WIDTH
+  // 完全模仿原生：只要会话可读且容器在，刻度条就渲染——不设条数/宽度门槛，
+  // 原生导航条的隐藏完全交给本插件的接管规则。
+  const visible = snapshot !== null && rect !== null
   // The ripple follows the pointer only (ZCode v5e parity): at rest every tick
   // is equal length and the current turn stands out by color/opacity alone.
   const focusIndex = hoverIndex

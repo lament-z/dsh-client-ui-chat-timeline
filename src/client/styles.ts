@@ -116,6 +116,11 @@ export const TIMELINE_STYLES = `
 .dsh-tl-tip-assistant[data-kind="empty"] {
   color: var(--dsw-static-neutral-bluish-400, rgba(255, 255, 255, 0.55));
 }
+/* 插件完全接管原生右侧 Turn 导航条：本样式表只随插件存在，插件卸载时
+   removeStyles 移除标签，原生导航条立即恢复。 */
+nav[aria-label='Turn navigation'] {
+  display: none !important;
+}
 `
 
 /** Inject the stylesheet once per document. */
@@ -127,4 +132,9 @@ export function ensureStyles(doc: Document): void {
   tag.dataset.pluginCss = tagId
   tag.textContent = TIMELINE_STYLES
   doc.head.appendChild(tag)
+}
+
+/** Remove the stylesheet (plugin teardown): restores the native turn navigator. */
+export function removeStyles(doc: Document): void {
+  doc.querySelector('style[data-plugin-css="chat-timeline"]')?.remove()
 }
