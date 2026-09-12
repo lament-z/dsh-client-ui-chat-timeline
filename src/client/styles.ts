@@ -21,7 +21,9 @@ export const TIMELINE_STYLES = `
 .dsh-tl-scroll {
   position: absolute;
   left: 12px;
-  top: 50%;
+  /* 原生 TurnNavigator 定位（eGxaPq_frame）：中心 = 内容顶 + (视口高 − 输入框高)/2，
+     即 --turn-rail-band 的中点；centerY 由 rail 按同一公式写入。 */
+  top: var(--dsh-tl-center-y, 50%);
   transform: translateY(-50%);
   width: 36px;
   max-height: calc(100% - 96px);
@@ -80,9 +82,11 @@ export const TIMELINE_STYLES = `
   max-width: calc(100vw - 2rem);
   padding: 12px;
   border-radius: 10px;
-  background: Canvas;
-  color: CanvasText;
-  border: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
+  /* 原生 tooltip 配对（dsh-web-frontend _bubble_）：灰底 + 静态白字，
+     主题切换由别名变量跟随；灰底与页面背景天然分层。 */
+  background: var(--dsw-alias-tooltip-bg, #43454a);
+  color: var(--dsw-static-neutral-bluish-00, #fff);
+  border: none;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
@@ -106,11 +110,11 @@ export const TIMELINE_STYLES = `
   white-space: pre-line;
   font-size: 13px;
   line-height: 20px;
-  opacity: 0.8;
+  color: var(--dsw-static-neutral-bluish-300, rgba(255, 255, 255, 0.8));
 }
 .dsh-tl-tip-assistant[data-kind="running"],
 .dsh-tl-tip-assistant[data-kind="empty"] {
-  opacity: 0.55;
+  color: var(--dsw-static-neutral-bluish-400, rgba(255, 255, 255, 0.55));
 }
 `
 

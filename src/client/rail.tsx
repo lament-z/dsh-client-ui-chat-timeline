@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { buildTimelineItems, type TimelineItem, type TimelineLabels } from './directory.ts'
+import { type TimelineItem } from './directory.ts'
 import type { TimelineKey } from './locales.ts'
 import { jumpToTurn, probeChatDom, type ChatDomProbe } from './dom.ts'
 import { ensureStyles } from './styles.ts'
@@ -36,7 +36,12 @@ interface Rect {
   top: number
   height: number
   width: number
+  /** Rail band center, viewport-relative to the container top (native --turn-rail-band rule). */
+  centerY: number
 }
+
+/** Default composer height when the host variable is absent (native fallback). */
+const COMPOSER_HEIGHT_FALLBACK = 152
 
 /** Ripple visual per distance from the hovered tick (ZCode _5e parity).
  *  The ripple is interaction-only: at rest every tick is idle (scaleX 1),
@@ -54,19 +59,6 @@ function ripple(distance: number): { opacity: number; scaleX: number; tone: 'pea
 const TICK_COLOR_FOREGROUND = 'CanvasText'
 const TICK_COLOR_SUBTLE = 'color-mix(in srgb, CanvasText 42%, transparent)'
 
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => setReduced(query.matches)
-    update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return reduced
-}
-
 /**
  * Render the question navigator rail.
  * @param props - composed slot props.
@@ -74,7 +66,6 @@ function useReducedMotion(): boolean {
  */
 export function TimelineRail({ source, t }: TimelineRailProps) {
   const state = useSyncExternalStore(source.subscribe, source.getSnapshot)
-  const reducedMotion = useReducedMotion()
   const probe = useMemo<ChatDomProbe | null>(() => (typeof document === 'undefined' ? null : probeChatDom(document)), [])
   const [containerVersion, setContainerVersion] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
@@ -94,10 +85,14 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   sourceRef.current = source
   const itemsRef = useRef<TimelineItem[]>([])
   itemsRef.current = items
-  // 0.1.5 探针按行键的 seq 前缀找锚点（`data-chat-flow-key="<seq>:<kind><id>"`）。
+  // 0.1.5 原生锚点：行按 `data-chat-turn="<turn>"` 键控（dsh-client-ui-chat
+  // ChatView），跳转与高亮都按轮次号走原生逻辑；seq 仅用于 loadThrough 翻页。
   const seqs = useMemo(() => items.map((item) => item.seq), [items])
   const seqsRef = useRef<number[]>([])
   seqsRef.current = seqs
+  const turns = useMemo(() => items.map((item) => item.turn), [items])
+  const turnsRef = useRef<(number | undefined)[]>([])
+  turnsRef.current = turns
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -138,8 +133,23 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
       frame.current = requestAnimationFrame(() => {
         frame.current = 0
         const box = container.getBoundingClientRect()
-        setRect({ left: box.left, top: box.top, height: box.height, width: box.width })
-        setActiveIndex(probe.activeIndex(seqsRef.current))
+        // 原生 TurnNavigator（eGxaPq_frame）定位复刻：
+        // 中心 = sticky 槽位 y + (视口高 − 输入框高) / 2，两个高度都读宿主变量。
+        // 槽位即原生导航条的父元素（sticky, height 0），拿不到时退化为容器顶。
+        const style = getComputedStyle(container)
+        const composerHeight = Number.parseFloat(style.getPropertyValue('--dsh-composer-height')) || COMPOSER_HEIGHT_FALLBACK
+        const viewportHeight = Number.parseFloat(style.getPropertyValue('--dsh-conversation-viewport-height')) || window.innerHeight
+        const slot = document.querySelector('nav[aria-label="Turn navigation"]')?.parentElement
+        const slotTop = slot !== null && slot !== undefined ? slot.getBoundingClientRect().top : box.top
+        const bandCenter = (viewportHeight - composerHeight) / 2
+        setRect({
+          left: box.left,
+          top: box.top,
+          height: box.height,
+          width: box.width,
+          centerY: Math.max(0, slotTop - box.top + bandCenter),
+        })
+        setActiveIndex(probe.activeIndex(turnsRef.current))
       })
     }
     sync()
@@ -159,8 +169,8 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   // items 变化（事件窗口增长/切换会话）后重算一次 active 高亮。
   useEffect(() => {
     if (probe === null || containerVersion === 0 || rect === null) return
-    setActiveIndex(probe.activeIndex(seqs))
-  }, [probe, containerVersion, rect, seqs])
+    setActiveIndex(probe.activeIndex(turns))
+  }, [probe, containerVersion, rect, turns])
 
   const visible = snapshot !== null && items.length >= 2 && rect !== null && rect.width >= MIN_CONTAINER_WIDTH
   // The ripple follows the pointer only (ZCode v5e parity): at rest every tick
@@ -183,14 +193,16 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   }, [])
 
   const jump = useCallback((index: number) => {
+    // 原生 navigateToTurn 流程：行已挂载直接落位；未挂载走官方 loadThrough
+    // 翻页后落位。落位是瞬时滚动（原生 landOnRow 语义），无需 motion 分支。
     void jumpToTurn(
       document,
       index,
+      turnsRef.current,
       seqsRef.current,
-      reducedMotion ? 'auto' : 'smooth',
       (seq: number) => sourceRef.current?.jumpThrough(seq) ?? Promise.resolve(),
     )
-  }, [reducedMotion])
+  }, [])
 
   if (!visible || probe === null || rect === null) return null
 
@@ -205,7 +217,7 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
         data-visible={visible ? 'true' : 'false'}
         data-testid="dsh-chat-timeline"
         data-item-count={items.length}
-        style={{ left: rect.left, top: rect.top, height: rect.height }}
+        style={{ left: rect.left, top: rect.top, height: rect.height, '--dsh-tl-center-y': `${rect.centerY}px` } as React.CSSProperties}
       >
         <div
           className="dsh-tl-scroll"
