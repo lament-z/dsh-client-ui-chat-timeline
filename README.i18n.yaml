@@ -5,6 +5,7 @@ sections:
   - title
   - intro
   - features
+  - mount
   - requirements
   - install
   - notes
