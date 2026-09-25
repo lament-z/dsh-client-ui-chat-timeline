@@ -57,11 +57,12 @@ interface ObservableLike<T> {
 
 /**
  * Structural face of ctx.sessions this module needs (kept narrow for tests).
- * 0.1.5: `binding.session.projections.faceOf('turnOutline')` is the official
- * whole-log turn index; `loadThrough(seq)` is the turn-jump pagination verb.
+ * 0.1.7: the session id is handed in by the host (session-scoped seat inject),
+ * `binding(id)` borrows the already-retained scope, `projections.faceOf
+ * ('turnOutline')` is the official whole-log turn index, and `loadThrough(seq)`
+ * is the turn-jump pagination verb.
  */
 export interface SessionsLike {
-  list: ObservableLike<{ current?: string }>
   binding(
     id: string,
   ): {
@@ -77,8 +78,6 @@ export interface SessionsLike {
 
 /** ObservableSnapshot 的最小结构面（getSnapshot/subscribe）。 */
 type ObservableSnapshotLike<T> = ObservableLike<T>
-
-const EMPTY_STATE: TimelineState = { sessionId: undefined, snapshot: null }
 
 /** Project one outline entry onto a tick (previews are host-bounded already). */
 export function itemFromOutline(
@@ -121,60 +120,51 @@ export function itemsFromOutline(
 // 保留目录数学的导出面（rail 不再走 nodes 路径，preview 预算常量仍被引用）。
 export { buildPreview, MAX_PREVIEW_CHARS, MAX_PREVIEW_PARAGRAPHS }
 
+/** Fallback preview labels when the outline entry carries no text. */
+const PREVIEW_LABELS = {
+  userFallback: '（无文本）',
+  assistantRunning: '（运行中）',
+  assistantEmpty: '（空）',
+} as const
+
 /**
- * Create the source. Subscribes to the sessions list, rebinds to the current
- * session's outline projection on selection change (polling while no session
- * is selected — the list store need not notify on pure selection switches),
- * and republishes a stable state whenever the outline or running flag moves.
+ * Create the source for one session. The id is supplied by the host — the
+ * session-scoped seat hands it to `inject` — so this no longer guesses which
+ * session is open and no longer watches the sessions list: it binds straight
+ * to that session's outline projection and republishes whenever the outline or
+ * the running flag moves.
+ *
+ * A bounded retry covers the materialization window (the seat can render a
+ * beat before `binding(id)` answers); after that the rail stays hidden.
  * @param sessions - the sessions service face (pass ctx.sessions).
+ * @param sessionId - the session this rail belongs to.
  * @returns the source face.
  */
-export function createTimelineSource(sessions: SessionsLike): TimelineSource {
-  let state: TimelineState = EMPTY_STATE
+export function createTimelineSource(sessions: SessionsLike, sessionId: string): TimelineSource {
+  let state: TimelineState = { sessionId, snapshot: null }
   const listeners = new Set<() => void>()
   let subscribed = false
-  let unbindSession: (() => void) | null = null
-  let boundSessionId: string | undefined
   let retryTimer: ReturnType<typeof setTimeout> | undefined
   let retryAttempts = 0
-  let noSessionPolls = 0
 
   const emit = () => {
     for (const listener of listeners) listener()
   }
 
-  const rebind = () => {
+  const readBinding = () => {
+    try {
+      return sessions.binding(sessionId)
+    } catch {
+      return undefined
+    }
+  }
+
+  const bind = () => {
     if (retryTimer !== undefined) {
       clearTimeout(retryTimer)
       retryTimer = undefined
     }
-    let current: string | undefined
-    try {
-      current = sessions.list.getSnapshot()?.current
-    } catch {
-      current = undefined
-    }
-    if (current === undefined) {
-      // 尚未选中会话：list 存储在纯选择切换时可能不通知，轮询等它出现。
-      state = EMPTY_STATE
-      emit()
-      if (subscribed && noSessionPolls < 60) {
-        noSessionPolls += 1
-        retryTimer = setTimeout(rebind, 1000)
-      }
-      return
-    }
-    noSessionPolls = 0
-    boundSessionId = current
-    unbindSession?.()
-    unbindSession = null
-    let bound: ReturnType<NonNullable<SessionsLike['binding']>> | undefined
-    try {
-      bound = sessions.binding(current)
-    } catch {
-      bound = undefined
-    }
-    const session = bound?.session
+    const session = readBinding()?.session
     const outlineFace = (() => {
       try {
         return session?.projections?.faceOf?.('turnOutline') as
@@ -185,14 +175,14 @@ export function createTimelineSource(sessions: SessionsLike): TimelineSource {
       }
     })()
     if (!session || !outlineFace) {
-      // Listed but not yet scoped (cold boot): keep an empty state and retry
-      // with backoff so the rail appears once the binding lands.
-      state = { sessionId: current, snapshot: null }
-      if (retryAttempts < 10) {
-        retryAttempts += 1
-        retryTimer = setTimeout(rebind, 500 * retryAttempts)
-      }
+      // Scope still materializing: keep an empty state and retry with backoff
+      // so the rail appears once the binding lands.
+      state = { sessionId, snapshot: null }
       emit()
+      if (subscribed && retryAttempts < 10) {
+        retryAttempts += 1
+        retryTimer = setTimeout(bind, 250 * retryAttempts)
+      }
       return
     }
     retryAttempts = 0
@@ -201,21 +191,17 @@ export function createTimelineSource(sessions: SessionsLike): TimelineSource {
         const outline = outlineFace.getSnapshot()
         const running = Boolean(session.getSnapshot()?.running)
         state = {
-          sessionId: current,
+          sessionId,
           snapshot: {
-            sessionId: current,
+            sessionId,
             items: Array.isArray(outline)
-              ? itemsFromOutline(outline, running, {
-                  userFallback: '（无文本）',
-                  assistantRunning: '（运行中）',
-                  assistantEmpty: '（空）',
-                })
+              ? itemsFromOutline(outline, running, PREVIEW_LABELS)
               : [],
             running,
           },
         }
       } catch {
-        state = { sessionId: current, snapshot: null }
+        state = { sessionId, snapshot: null }
       }
       emit()
     }
@@ -223,12 +209,9 @@ export function createTimelineSource(sessions: SessionsLike): TimelineSource {
     try {
       outlineFace.subscribe(push)
       session.subscribe(push)
-      unbindSession = () => {
-        // Observable faces expose no unsubscribe disposer contract here; the
-        // subscription rides the plugin fiber and is torn down with it.
-      }
     } catch {
-      unbindSession = null
+      // Observable faces expose no unsubscribe disposer contract here; the
+      // subscription rides the plugin fiber and is torn down with it.
     }
   }
 
@@ -238,12 +221,7 @@ export function createTimelineSource(sessions: SessionsLike): TimelineSource {
       listeners.add(listener)
       if (first) {
         subscribed = true
-        try {
-          sessions.list.subscribe(rebind)
-        } catch {
-          // Service unavailable: the rail stays hidden, nothing throws.
-        }
-        rebind()
+        bind()
       }
       return () => {
         listeners.delete(listener)
@@ -253,20 +231,14 @@ export function createTimelineSource(sessions: SessionsLike): TimelineSource {
       return state
     },
     jumpThrough(seq: number): Promise<void> {
-      let current: string | undefined
-      try {
-        current = sessions.list.getSnapshot()?.current
-      } catch {
-        current = undefined
-      }
-      const session = current === undefined ? undefined : sessions.binding(current)?.session
+      const session = readBinding()?.session
       if (typeof session?.loadThrough !== 'function') return Promise.resolve()
       return session.loadThrough(seq).catch(() => {})
     },
   }
 }
 
-/** Build the source from the plugin client context. */
-export function timelineSourceFromContext(ctx: ClientContext): TimelineSource {
-  return createTimelineSource(ctx.sessions as unknown as SessionsLike)
+/** Build the source from the plugin client context and the seat's session id. */
+export function timelineSourceFromContext(ctx: ClientContext, sessionId: string): TimelineSource {
+  return createTimelineSource(ctx.sessions as unknown as SessionsLike, sessionId)
 }

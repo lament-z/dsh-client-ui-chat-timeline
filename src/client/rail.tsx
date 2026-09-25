@@ -1,10 +1,16 @@
 /**
- * TimelineRail — the shell.overlay entry: a left-edge tick rail over the
- * conversation, one tick per human question. Visual and interaction constants
- * replicate the ZCode TurnNavigator (see .scratch/chat-timeline/spec.md):
+ * TimelineRail — the conversation.input.overlay entry: a left-edge tick rail
+ * over the conversation, one tick per human question. Visual and interaction
+ * constants replicate the ZCode TurnNavigator (see .scratch/chat-timeline/spec.md):
  * hover ripple scaleX 2.6/1.7/1.25 with opacity 1/.86/.72/.58 over 150ms,
- * 320px preview cards after a 120ms delay, >=2 questions to render, >=864px
- * container width, prefers-reduced-motion fallback, full aria labelling.
+ * 320px preview cards after a 120ms delay, prefers-reduced-motion fallback,
+ * full aria labelling.
+ *
+ * Geometry follows the native TurnNavigator model: the vertical band
+ * (--dsh-tl-band, the host's viewport-minus-composer rule) is computed in CSS
+ * from the host variables that the seat inherits, so no JS measures it. Only
+ * the horizontal left edge is measured — the conversation column is a grid
+ * track, so it is not flush to the window edge once the right sidebar opens.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
@@ -15,9 +21,11 @@ import { jumpToTurn, probeChatDom, type ChatDomProbe } from './dom.ts'
 import { ensureStyles, removeStyles } from './styles.ts'
 import type { TimelineSource } from './source.ts'
 
-/** Component props: the locale seat plus the injected session source. */
+/** Component props: the locale seat, the seat's session id, and the source. */
 export type TimelineRailProps = PropsLocale<'chat-timeline'> & {
-  /** The current-session snapshot source (built from ctx.sessions). */
+  /** The session this rail belongs to (host-supplied by the seat's inject). */
+  sessionId: string
+  /** That session's snapshot source (built from ctx.sessions). */
   source: TimelineSource
 }
 
@@ -26,18 +34,6 @@ const ITEM_PITCH = 10
 /** Preview-card hover delays (ms). */
 const TIP_OPEN_DELAY = 120
 const TIP_CLOSE_DELAY = 80
-
-interface Rect {
-  left: number
-  top: number
-  height: number
-  width: number
-  /** Rail band center, viewport-relative to the container top (native --turn-rail-band rule). */
-  centerY: number
-}
-
-/** Default composer height when the host variable is absent (native fallback). */
-const COMPOSER_HEIGHT_FALLBACK = 152
 
 /** Ripple visual per distance from the hovered tick (ZCode _5e parity).
  *  The ripple is interaction-only: at rest every tick is idle (scaleX 1),
@@ -60,11 +56,11 @@ const TICK_COLOR_SUBTLE = 'color-mix(in srgb, CanvasText 42%, transparent)'
  * @param props - composed slot props.
  * @returns the rail, or null when it should not render.
  */
-export function TimelineRail({ source, t }: TimelineRailProps) {
+export function TimelineRail({ sessionId, source, t }: TimelineRailProps) {
   const state = useSyncExternalStore(source.subscribe, source.getSnapshot)
   const probe = useMemo<ChatDomProbe | null>(() => (typeof document === 'undefined' ? null : probeChatDom(document)), [])
-  const [containerVersion, setContainerVersion] = useState(0)
-  const [rect, setRect] = useState<Rect | null>(null)
+  const [container, setContainer] = useState<HTMLElement | null>(null)
+  const [navEl, setNavEl] = useState<HTMLElement | null>(null)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [hoverIndex, setHoverIndex] = useState<number | undefined>(undefined)
   const [tipIndex, setTipIndex] = useState<number | undefined>(undefined)
@@ -81,8 +77,8 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   sourceRef.current = source
   const itemsRef = useRef<TimelineItem[]>([])
   itemsRef.current = items
-  // 0.1.5 原生锚点：行按 `data-chat-turn="<turn>"` 键控（dsh-client-ui-chat
-  // ChatView），跳转与高亮都按轮次号走原生逻辑；seq 仅用于 loadThrough 翻页。
+  // 原生锚点：行按 `data-chat-turn="<turn>"` 键控（dsh-client-ui-chat ChatView），
+  // 跳转与高亮都按轮次号走原生逻辑；seq 仅用于 loadThrough 翻页。
   const seqs = useMemo(() => items.map((item) => item.seq), [items])
   const seqsRef = useRef<number[]>([])
   seqsRef.current = seqs
@@ -97,16 +93,16 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
     return () => removeStyles(document)
   }, [])
 
-  // Find the chat container: re-probe when the session changes and briefly
-  // afterwards (the conversation mounts a beat later than the selection).
+  // Locate the chat scrollport. The seat renders as soon as the session scope
+  // exists, which can be a beat before the conversation itself mounts.
   useEffect(() => {
     if (probe === null) return
     let attempts = 0
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
-      const container = probe.getContainer()
-      if (container !== null || attempts >= 10) {
-        setContainerVersion((version) => version + 1)
+      const found = probe.getContainer()
+      if (found !== null || attempts >= 10) {
+        setContainer(found)
         return
       }
       attempts += 1
@@ -116,37 +112,35 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
     return () => {
       if (timer !== undefined) clearTimeout(timer)
     }
-  }, [probe, state.sessionId])
+  }, [probe, sessionId])
 
-  // Attach scroll/size watchers to the container once found.
+  // Horizontal geometry only: the rail's left edge, which is the conversation
+  // column's left edge. Vertical geometry is pure CSS (styles.ts) because the
+  // band variables live on the scrollport and the seat inherits them; the
+  // column stays measured because it is a grid track that the right sidebar
+  // shrinks, so it is not derivable from a window-edge offset.
   useEffect(() => {
-    if (probe === null || containerVersion === 0) return
-    const container = probe.getContainer()
-    if (container === null) {
-      setRect(null)
-      return
+    if (container === null || navEl === null) return
+    const write = () => {
+      navEl.style.setProperty('--dsh-tl-left', `${container.getBoundingClientRect().left}px`)
     }
+    write()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(write)
+    observer?.observe(container)
+    window.addEventListener('resize', write)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', write)
+    }
+  }, [container, navEl])
+
+  // Active-tick highlight follows the conversation's scrolling.
+  useEffect(() => {
+    if (container === null || probe === null) return
     const sync = () => {
       if (frame.current !== 0) return
       frame.current = requestAnimationFrame(() => {
         frame.current = 0
-        const box = container.getBoundingClientRect()
-        // 原生 TurnNavigator（eGxaPq_frame）定位复刻：
-        // 中心 = sticky 槽位 y + (视口高 − 输入框高) / 2，两个高度都读宿主变量。
-        // 槽位即原生导航条的父元素（sticky, height 0），拿不到时退化为容器顶。
-        const style = getComputedStyle(container)
-        const composerHeight = Number.parseFloat(style.getPropertyValue('--dsh-composer-height')) || COMPOSER_HEIGHT_FALLBACK
-        const viewportHeight = Number.parseFloat(style.getPropertyValue('--dsh-conversation-viewport-height')) || window.innerHeight
-        const slot = document.querySelector('nav[aria-label="Turn navigation"]')?.parentElement
-        const slotTop = slot !== null && slot !== undefined ? slot.getBoundingClientRect().top : box.top
-        const bandCenter = (viewportHeight - composerHeight) / 2
-        setRect({
-          left: box.left,
-          top: box.top,
-          height: box.height,
-          width: box.width,
-          centerY: Math.max(0, slotTop - box.top + bandCenter),
-        })
         setActiveIndex(probe.activeIndex(turnsRef.current))
       })
     }
@@ -162,17 +156,17 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
       if (frame.current !== 0) cancelAnimationFrame(frame.current)
       frame.current = 0
     }
-  }, [probe, containerVersion])
+  }, [container, probe])
 
   // items 变化（事件窗口增长/切换会话）后重算一次 active 高亮。
   useEffect(() => {
-    if (probe === null || containerVersion === 0 || rect === null) return
+    if (container === null || probe === null) return
     setActiveIndex(probe.activeIndex(turns))
-  }, [probe, containerVersion, rect, turns])
+  }, [container, probe, turns])
 
-  // 完全模仿原生：只要会话可读且容器在，刻度条就渲染——不设条数/宽度门槛，
-  // 原生导航条的隐藏完全交给本插件的接管规则。
-  const visible = snapshot !== null && rect !== null
+  // 完全模仿原生：只要会话可读就渲染——不设条数/宽度门槛，原生导航条的隐藏
+  // 完全交给本插件的接管规则。
+  const visible = snapshot !== null
   // The ripple follows the pointer only (ZCode v5e parity): at rest every tick
   // is equal length and the current turn stands out by color/opacity alone.
   const focusIndex = hoverIndex
@@ -204,7 +198,7 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
     )
   }, [])
 
-  if (!visible || probe === null || rect === null) return null
+  if (!visible || probe === null) return null
 
   const trackHeight = items.length * ITEM_PITCH
   const tip = tipIndex !== undefined ? items[tipIndex] : undefined
@@ -212,12 +206,12 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   return (
     <>
       <nav
+        ref={setNavEl}
         aria-label={t('nav.label')}
         className="dsh-tl-nav"
         data-visible={visible ? 'true' : 'false'}
         data-testid="dsh-chat-timeline"
         data-item-count={items.length}
-        style={{ left: rect.left, top: rect.top, height: rect.height, '--dsh-tl-center-y': `${rect.centerY}px` } as React.CSSProperties}
       >
         <div
           className="dsh-tl-scroll"
@@ -297,7 +291,7 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
       </nav>
       {tip !== undefined && tipIndex !== undefined
         ? createPortal(
-            <TipCard item={tip} index={tipIndex} rect={rect} t={t} />,
+            <TipCard item={tip} index={tipIndex} nav={navEl} t={t} />,
             document.body,
           )
         : null}
@@ -305,16 +299,19 @@ export function TimelineRail({ source, t }: TimelineRailProps) {
   )
 }
 
-function TipCard({ item, index, rect, t }: {
+function TipCard({ item, index, nav, t }: {
   item: TimelineItem
   index: number
-  rect: Rect
+  nav: HTMLElement | null
   t: (key: TimelineKey, params?: Record<string, string | number>) => string
 }) {
-  const slot = document.querySelector<HTMLElement>('[data-testid="dsh-chat-timeline-item"][data-item-index="' + String(index) + '"]')
+  const slot = nav?.querySelector<HTMLElement>('[data-testid="dsh-chat-timeline-item"][data-item-index="' + String(index) + '"]')
   const box = slot?.getBoundingClientRect()
-  const left = box === undefined ? rect.left + 56 : Math.min(box.right + 8, window.innerWidth - 336)
-  const top = box === undefined ? rect.top + 100 : Math.max(8, Math.min(box.top - 4, window.innerHeight - 160))
+  const railBox = nav?.getBoundingClientRect()
+  const left = box !== undefined
+    ? Math.min(box.right + 8, window.innerWidth - 336)
+    : (railBox !== undefined ? railBox.right + 8 : 8)
+  const top = box !== undefined ? Math.max(8, Math.min(box.top - 4, window.innerHeight - 160)) : 8
   return (
     <div
       className="dsh-tl-tip"

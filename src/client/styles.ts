@@ -10,6 +10,17 @@ export const TIMELINE_STYLES = `
   position: fixed;
   z-index: 10;
   width: 48px;
+  /* 水平：会话列左沿，由 rail 写入 --dsh-tl-left。这是唯一保留的测量值——
+     列是 grid 轨道，右侧栏打开时会被挤压，不贴窗口右沿，无法由窗口宽度推导。 */
+  left: var(--dsh-tl-left, 0px);
+  /* 垂直：原生 TurnNavigator 的 band 模型（eGxaPq_frame 的 --turn-rail-band）。
+     会话可视带 = 视口高 − 输入框高；其中点在视口坐标下为
+       100dvh − (会话可视高 + 输入框高) / 2
+     两个变量由宿主写在滚动容器上，本 seat 在滚动容器内可直接继承，故整个垂直
+     几何是纯 CSS：不做测量，也不依赖原生 nav 是否存在于 DOM。 */
+  --dsh-tl-band: calc(var(--dsh-conversation-viewport-height, 100dvh) - var(--dsh-composer-height, 152px));
+  top: calc(100dvh - (var(--dsh-conversation-viewport-height, 100dvh) + var(--dsh-composer-height, 152px)) / 2);
+  transform: translateY(-50%);
   pointer-events: none;
   opacity: 1;
   transition: opacity 150ms ease-out;
@@ -19,14 +30,11 @@ export const TIMELINE_STYLES = `
   visibility: hidden;
 }
 .dsh-tl-scroll {
-  position: absolute;
+  position: relative;
   left: 12px;
-  /* 原生 TurnNavigator 定位（eGxaPq_frame）：中心 = 内容顶 + (视口高 − 输入框高)/2，
-     即 --turn-rail-band 的中点；centerY 由 rail 按同一公式写入。 */
-  top: var(--dsh-tl-center-y, 50%);
-  transform: translateY(-50%);
   width: 36px;
-  max-height: calc(100% - 96px);
+  /* 原生 frame 的高度上限：band − 64px，再夹到 420px。 */
+  max-height: min(max(0px, calc(var(--dsh-tl-band) - 64px)), 420px);
   overflow-x: hidden;
   overflow-y: auto;
   padding-block: 4px;

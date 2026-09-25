@@ -41,13 +41,12 @@ interface ObservableLike<T> {
 }
 /**
  * Structural face of ctx.sessions this module needs (kept narrow for tests).
- * 0.1.5: `binding.session.projections.faceOf('turnOutline')` is the official
- * whole-log turn index; `loadThrough(seq)` is the turn-jump pagination verb.
+ * 0.1.7: the session id is handed in by the host (session-scoped seat inject),
+ * `binding(id)` borrows the already-retained scope, `projections.faceOf
+ * ('turnOutline')` is the official whole-log turn index, and `loadThrough(seq)`
+ * is the turn-jump pagination verb.
  */
 export interface SessionsLike {
-    list: ObservableLike<{
-        current?: string;
-    }>;
     binding(id: string): {
         session: ObservableLike<{
             running?: boolean;
@@ -76,13 +75,18 @@ export declare function itemsFromOutline(outline: readonly TurnOutlineEntryLike[
 }): TimelineItem[];
 export { buildPreview, MAX_PREVIEW_CHARS, MAX_PREVIEW_PARAGRAPHS };
 /**
- * Create the source. Subscribes to the sessions list, rebinds to the current
- * session's outline projection on selection change (polling while no session
- * is selected — the list store need not notify on pure selection switches),
- * and republishes a stable state whenever the outline or running flag moves.
+ * Create the source for one session. The id is supplied by the host — the
+ * session-scoped seat hands it to `inject` — so this no longer guesses which
+ * session is open and no longer watches the sessions list: it binds straight
+ * to that session's outline projection and republishes whenever the outline or
+ * the running flag moves.
+ *
+ * A bounded retry covers the materialization window (the seat can render a
+ * beat before `binding(id)` answers); after that the rail stays hidden.
  * @param sessions - the sessions service face (pass ctx.sessions).
+ * @param sessionId - the session this rail belongs to.
  * @returns the source face.
  */
-export declare function createTimelineSource(sessions: SessionsLike): TimelineSource;
-/** Build the source from the plugin client context. */
-export declare function timelineSourceFromContext(ctx: ClientContext): TimelineSource;
+export declare function createTimelineSource(sessions: SessionsLike, sessionId: string): TimelineSource;
+/** Build the source from the plugin client context and the seat's session id. */
+export declare function timelineSourceFromContext(ctx: ClientContext, sessionId: string): TimelineSource;
